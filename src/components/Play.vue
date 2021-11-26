@@ -252,6 +252,7 @@ import { mapMutations } from 'vuex'
 import { star, history, setting, shortcut, mini, channelList, sites } from '../lib/dexie'
 import zy from '../lib/site/tools'
 import Player from 'xgplayer'
+import 'xgplayer-mp4'
 import HlsJsPlayer from 'xgplayer-hls.js'
 import FlvJsPlayer from 'xgplayer-flv.js'
 import mt from 'mousetrap'
@@ -342,7 +343,7 @@ export default {
         videoTitle: true,
         airplay: true,
         closeVideoTouch: true,
-        ignores: ['cssFullscreen', 'replay', 'error'], // 为了切换播放器类型时避免显示错误刷新，暂时忽略错误
+        ignores: ['replay', 'error'], // 为了切换播放器类型时避免显示错误刷新，暂时忽略错误
         preloadTime: 300
       },
       state: {
@@ -445,6 +446,9 @@ export default {
       set (val) {
         this.SET_DetailCache(val)
       }
+    },
+    VideoEssentialInfo () {
+      return this.video.key + '@' + this.video.info.id + '@' + this.video.info.index
     }
   },
   watch: {
@@ -458,12 +462,11 @@ export default {
         }
       }
     },
-    video: {
+    VideoEssentialInfo: {
       handler () {
         if (this.changingIPTV) return
         this.getUrls()
-      },
-      deep: true
+      }
     },
     setting: {
       handler () {
@@ -655,9 +658,9 @@ export default {
           const currentSite = await sites.find({ key: this.video.key })
           this.$message.info('即将调用解析接口播放，请等待...')
           if (currentSite.jiexiUrl) {
-            this.onlineUrl = /^\s*(default|默认)\s*$/i.test(currentSite.jiexiUrl) ? this.setting.defaultParseURL + url : currentSite.jiexiUrl + url
+            this.onlineUrl = currentSite.jiexiUrl + url
           } else {
-            this.onlineUrl = url
+            this.onlineUrl = this.setting.defaultParseURL + url
           }
           this.videoPlaying('online')
           return
@@ -1568,7 +1571,7 @@ export default {
     },
     minMaxEvent () {
       win.on('minimize', () => {
-        if (this.xg && this.xg.hasStart) {
+        if (this.xg && this.xg.hasStart && this.setting.pauseWhenMinimize) {
           this.xg.pause()
         }
       })
@@ -1663,6 +1666,9 @@ export default {
   display: block;
   cursor: pointer;
   margin-left: 3px;
+}
+.xgplayer-skin-default .xg-btn-playPrev {
+  margin-left: 50px;
 }
 .xgplayer-skin-default .xg-btn-quitMiniMode {
   display: none;

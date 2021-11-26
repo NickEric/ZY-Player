@@ -111,13 +111,16 @@ const zy = {
         axios.get(url).then(res => {
           const data = res.data
           const json = parser.parse(data, this.xmlConfig)
-          const jsondata = json.rss === undefined ? json : json.rss
+          const jsondata = json?.rss === undefined ? json : json.rss
+          if (!jsondata?.class || !jsondata?.list) resolve()
           const arr = []
           if (jsondata.class) {
+            // 有些网站返回的分类名里会含有一串包含在{}内的字符串,移除掉
+            const regex = /\{.*\}/i
             for (const i of jsondata.class.ty) {
               const j = {
                 tid: i._id,
-                name: i._t
+                name: i._t.replace(regex, '')
               }
               arr.push(j)
             }
@@ -216,16 +219,55 @@ const zy = {
         axios.get(url, { timeout: 3000 }).then(res => {
           const data = res.data
           const json = parser.parse(data, this.xmlConfig)
-          const jsondata = json.rss === undefined ? json : json.rss
+          const jsondata = json?.rss === undefined ? json : json.rss
           if (json && jsondata && jsondata.list) {
             let videoList = jsondata.list.video
             if (Object.prototype.toString.call(videoList) === '[object Object]') videoList = [].concat(videoList)
-            videoList = videoList.filter(e => e.name.toLowerCase().includes(wd.toLowerCase()))
-            if (videoList.length) {
+            videoList = videoList?.filter(e => e.name.toLowerCase().includes(wd.toLowerCase()))
+            if (videoList?.length) {
               resolve(videoList)
             } else {
               resolve()
             }
+          } else {
+            resolve()
+          }
+        }).catch(err => {
+          reject(err)
+        })
+      }).catch(err => {
+        reject(err)
+      })
+    })
+  },
+  /**
+   * 搜索资源详情
+   * @param {*} key 资源网 key
+   * @param {*} wd 搜索关键字
+   * @returns
+   */
+  searchFirstDetail (key, wd) {
+    return new Promise((resolve, reject) => {
+      this.getSite(key).then(res => {
+        const site = res
+        const url = `${site.api}?wd=${encodeURI(wd)}`
+        axios.get(url, { timeout: 3000 }).then(res => {
+          const data = res.data
+          const json = parser.parse(data, this.xmlConfig)
+          const jsondata = json?.rss === undefined ? json : json.rss
+          if (json && jsondata && jsondata.list) {
+            let videoList = jsondata.list.video
+            if (Object.prototype.toString.call(videoList) === '[object Object]') videoList = [].concat(videoList)
+            videoList = videoList?.filter(e => e.name.toLowerCase().includes(wd.toLowerCase()))
+            if (videoList?.length) {
+              this.detail(key, videoList[0].id).then(detailRes => {
+                resolve(detailRes)
+              })
+            } else {
+              resolve()
+            }
+          } else {
+            resolve()
           }
         }).catch(err => {
           reject(err)
@@ -248,8 +290,9 @@ const zy = {
         axios.get(url).then(res => {
           const data = res.data
           const json = parser.parse(data, this.xmlConfig)
-          const jsondata = json.rss === undefined ? json : json.rss
-          const videoList = jsondata.list.video
+          const jsondata = json?.rss === undefined ? json : json.rss
+          const videoList = jsondata?.list?.video
+          if (!videoList) resolve()
           // Parse video lists
           let fullList = []
           let index = 0
@@ -491,13 +534,33 @@ const zy = {
       })
     })
   },
-  get7kParseURL () {
+  /**
+  * 获取豆瓣相关视频推荐列表
+  * @param {*} name 视频名称
+  * @param {*} year 视频年份
+  * @returns 豆瓣相关视频推荐列表
+  */
+  doubanRecommendations (name, year) {
     return new Promise((resolve, reject) => {
-      axios.get('https://zy.7kjx.com/').then(res => {
-        const $ = cheerio.load(res.data)
-        const parseURL = $('body > div.container > div > div.stui-pannel > div.col-pd > p:contains("解析接口:")').first().find('a').text()
-        resolve(parseURL)
-      }).catch(err => { reject(err) })
+      const nameToSearch = name.replace(/\s/g, '')
+      const recommendations = []
+      this.doubanLink(nameToSearch, year).then(link => {
+        if (link.includes('https://www.douban.com/search')) {
+          resolve(recommendations)
+        } else {
+          axios.get(link).then(response => {
+            const $ = cheerio.load(response.data)
+            $('div.recommendations-bd').find('div>dl>dd>a').each(function (index, element) {
+              recommendations.push($(element).text())
+            })
+            resolve(recommendations)
+          }).catch(err => {
+            reject(err)
+          })
+        }
+      }).catch(err => {
+        reject(err)
+      })
     })
   },
   getDefaultSites () {

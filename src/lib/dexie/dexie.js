@@ -1,8 +1,7 @@
 import Dexie from 'dexie'
-import { setting, sites, localKey, iptv, recommendations } from './initData'
+import { sites, localKey, iptv, recommendations, iniSetting } from './initData'
 
 const db = new Dexie('zy')
-
 db.version(4).stores({
   search: '++id, keywords',
   setting: 'id, theme, site, shortcut, view, volume, externalPlayer, searchGroup, excludeRootClasses, excludeR18Films, forwardTimeInSec, starViewMode, recommandationViewMode, searchViewMode, password, proxy, allowPassWhenIptvCheck, autocleanWhenIptvCheck',
@@ -59,8 +58,59 @@ db.version(8).stores({
   })
 })
 
+db.version(9).stores({
+  history: '++id, [site+ids], name, type, year, index, time, duration, detail, onlinePlay, hasUpdate'
+})
+
+db.version(10).stores({
+  setting: 'id, theme, shortcut, view, volume, externalPlayer, searchGroup, excludeRootClasses, excludeR18Films, forwardTimeInSec, starViewMode, recommandationViewMode, searchViewMode, password, proxy, allowPassWhenIptvCheck, autocleanWhenIptvCheck, rootClassFilter, r18ClassFilter, classFilter'
+}).upgrade(trans => {
+  trans.setting.toCollection().modify(setting => {
+    delete setting.site
+    setting.rootClassFilter = ['电影', '电影片', '电视剧', '连续剧', '综艺', '动漫']
+    setting.r18ClassFilter = ['伦理', '论理', '倫理', '福利', '激情', '理论', '写真', '情色', '美女', '街拍', '赤足', '性感', '里番', 'VIP']
+    setting.classFilter = ['电影', '电影片', '电视剧', '连续剧', '综艺', '动漫', '伦理', '论理', '倫理', '福利', '激情', '理论', '写真', '情色', '美女', '街拍', '赤足', '性感', '里番', 'VIP']
+  })
+})
+
+db.version(11).stores({
+  setting: 'id, theme, shortcut, view, volume, externalPlayer, searchGroup, excludeRootClasses, excludeR18Films, forwardTimeInSec, starViewMode, recommandationViewMode,' +
+    'searchViewMode, password, proxy, allowPassWhenIptvCheck, autocleanWhenIptvCheck, rootClassFilter, r18ClassFilter, classFilter, restoreWindowPositionAndSize, windowPositionAndSize, pauseWhenMinimize',
+  cachedMovies: '++id, [key+ids], site, name, detail, index, rate, hasUpdate'
+}).upgrade(trans => {
+  trans.setting.toCollection().modify(setting => {
+    setting.restoreWindowPositionAndSize = false
+    setting.windowPositionAndSize = {
+      x: 0,
+      y: 0,
+      width: 1080,
+      height: 720
+    }
+    setting.pauseWhenMinimize = false
+  })
+})
+
+db.version(11).stores({
+  setting: 'id, theme, shortcut, view, volume, externalPlayer, searchGroup, excludeRootClasses, excludeR18Films, forwardTimeInSec, starViewMode, recommandationViewMode,' +
+    'searchViewMode, password, proxy, allowPassWhenIptvCheck, autocleanWhenIptvCheck, rootClassFilter, r18ClassFilter, classFilter, restoreWindowPositionAndSize,' +
+    'windowPositionAndSize, pauseWhenMinimize, sitesDataURL, defaultParseURL'
+}).upgrade(trans => {
+  trans.setting.toCollection().modify(setting => {
+    setting.sitesDataURL = 'https://gitee.com/cuiocean/ZY-Player-Resources/raw/main/Sites/Sites.json'
+    setting.defaultParseURL = 'https://jx.bpba.cc/?v='
+  })
+})
+
+db.version(12).stores({
+  sites: '++id, key, name, api, download, jiexiUrl, isActive, group, reverseOrder'
+}).upgrade(trans => {
+  trans.sites.toCollection().modify(site => {
+    site.reverseOrder = false
+  })
+})
+
 db.on('populate', () => {
-  db.setting.bulkAdd(setting)
+  db.setting.bulkAdd(iniSetting)
   db.sites.bulkAdd(sites)
   db.shortcut.bulkAdd(localKey)
   db.iptv.bulkAdd(iptv)

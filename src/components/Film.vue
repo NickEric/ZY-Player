@@ -281,7 +281,7 @@
           animationEffect="fadeIn"
           backgroundColor="rgba(0, 0, 0, 0)">
             <template slot="item" slot-scope="props">
-              <div class="card" v-show="!setting.excludeR18Films || !containsR18Keywords(props.data.type)">
+              <div class="card" v-show="!setting.excludeR18Films || !containsClassFilterKeyword(props.data.type)">
                 <div class="img">
                   <div class="site">
                     <span>{{props.data.site.name}}</span>
@@ -322,7 +322,6 @@ export default {
   data () {
     return {
       showFind: false,
-      showToolbar: false,
       showTableLastColumn: false,
       sites: [],
       site: {},
@@ -345,18 +344,19 @@ export default {
       filteredSearchContents: [],
       currentColumn: '',
       searchGroup: '',
-      searchGroups: [],
-      // 福利片关键词
-      r18KeyWords: ['伦理', '论理', '倫理', '福利', '激情', '理论', '写真', '情色', '美女', '街拍', '赤足', '性感', '里番', 'VIP'],
+      searchGroups: ['站内', '组内', '全站'],
+      classFilterKeywords: [],
       filteredList: [],
       areas: [],
+      searchRunning: false,
+      siteSearchCount: 0,
+      infiniteHandlerCount: 0,
+      // Toolbar
+      showToolbar: false,
       selectedAreas: [],
       sortKeyword: '',
       sortKeywords: ['按片名', '按上映年份', '按更新时间'],
-      selectedYears: { start: 0, end: new Date().getFullYear() },
-      searchRunning: false,
-      siteSearchCount: 0,
-      infiniteHandlerCount: 0
+      selectedYears: { start: 0, end: new Date().getFullYear() }
     }
   },
   components: {
@@ -413,12 +413,13 @@ export default {
       }
     },
     filterSettings () {
-      return this.$store.getters.getSetting.excludeR18Films // 需要监听的数据
+      return this.$store.getters.getSetting.classFilter // 需要监听的数据
     },
     searchSites () {
       if (this.searchGroup === '站内') return [this.site]
+      if (this.searchGroup === '组内') return this.sites.filter(site => site.group === this.site.group)
       if (this.searchGroup === '全站') return this.sites
-      return this.sites.filter(site => site.group === this.searchGroup)
+      return this.sites.filter(site => site.isActive)
     }
   },
   filters: {
@@ -443,7 +444,7 @@ export default {
       }
     },
     filterSettings () {
-      this.siteClick(this.site.name)
+      this.refreshClass()
     },
     list: {
       handler (list) {
@@ -455,9 +456,12 @@ export default {
     siteSearchCount () {
       if (this.siteSearchCount === this.searchSites.length) this.searchRunning = false
     },
+    site () {
+      this.siteClick(this.site.name)
+    },
     searchContents: {
       handler (list) {
-        list = list.filter(res => !this.setting.excludeR18Films || !this.containsR18Keywords(res.type))
+        list = list.filter(res => !this.setting.excludeR18Films || !this.containsClassFilterKeyword(res.type))
         this.areas = [...new Set(list.map(ele => ele.area))].filter(x => x)
         this.searchClassList = [...new Set(list.map(ele => ele.type))].filter(x => x)
         this.refreshFilteredList()
@@ -499,14 +503,14 @@ export default {
       let filteredData = this.showFind ? this.searchContents : this.list
       if (this.showFind) filteredData = filteredData.filter(x => (this.selectedSearchClassNames.length === 0) || this.selectedSearchClassNames.includes(x.type))
       filteredData = filteredData.filter(x => (this.selectedAreas.length === 0) || this.selectedAreas.includes(x.area))
-      filteredData = filteredData.filter(res => !this.setting.excludeR18Films || !this.containsR18Keywords(res.type))
+      filteredData = filteredData.filter(res => !this.setting.excludeR18Films || !this.containsClassFilterKeyword(res.type))
       filteredData = filteredData.filter(res => res.year >= this.selectedYears.start)
       filteredData = filteredData.filter(res => res.year <= this.selectedYears.end)
       if (!this.showFind) this.selectedClassName = this.type.name + '    ' + filteredData.length + '/' + this.recordcount
       switch (this.sortKeyword) {
         case '按上映年份':
           filteredData.sort(function (a, b) {
-            return a.year - b.year
+            return b.year - a.year
           })
           break
         case '按片名':
@@ -520,8 +524,14 @@ export default {
           })
           break
         default:
+          filteredData.sort(function (a, b) {
+            return new Date(b.last) - new Date(a.last)
+          })
           break
       }
+
+      // Get unique film data
+      filteredData = Array.from(new Set(filteredData))
       if (this.showFind) {
         this.filteredSearchContents = filteredData
       } else {
@@ -591,6 +601,16 @@ export default {
         })
       }
     },
+    refreshClass () {
+      this.getClass().then(res => {
+        this.classList = res
+        // cache classList data
+        FILM_DATA_CACHE[this.site.key] = {
+          classList: this.classList
+        }
+        this.classClick(this.type.name)
+      })
+    },
     classClick (className) {
       this.list = []
       this.type = this.classList.find(x => x.name === className)
@@ -618,20 +638,11 @@ export default {
     getClass () {
       return new Promise((resolve, reject) => {
         const key = this.site.key
-        // 屏蔽主分类
-        const classToHide = ['电影', '电影片', '电视剧', '连续剧', '综艺', '动漫']
         zy.class(key).then(res => {
           const allClass = [{ name: '最新', tid: 0 }]
           res.class.forEach(element => {
-            if (!this.setting.excludeRootClasses || !classToHide.includes(element.name)) {
-              if (this.setting.excludeR18Films) {
-                const containKeyWord = this.containsR18Keywords(element.name)
-                if (!containKeyWord) {
-                  allClass.push(element)
-                }
-              } else {
-                allClass.push(element)
-              }
+            if (!this.containsClassFilterKeyword(element.name)) {
+              allClass.push(element)
             }
           })
           resolve(allClass)
@@ -640,19 +651,20 @@ export default {
         })
       })
     },
-    containsR18Keywords (name) {
-      const containKeyWord = false
-      if (!name) {
-        return containKeyWord
+    containsClassFilterKeyword (name) {
+      let ret = false
+      // 主分类过滤, 检测关键词是否包含分类名
+      if (this.setting.excludeRootClasses) {
+        ret = this.setting.rootClassFilter?.some(v => v.includes(name))
       }
-      return this.r18KeyWords.some(v => name.includes(v))
+      // 福利过滤,检测分类名是否包含关键词
+      if (this.setting.excludeR18Films && !ret) {
+        ret = this.setting.r18ClassFilter?.some(v => name?.includes(v))
+      }
+      return ret
     },
     toFlipPagecount () {
-      // 似乎需要解析的网站的视频排序和其他m3u8采集站的顺序正好相反
-      if (this.site.jiexiUrl) {
-        return true
-      }
-      return false
+      return this.site.reverseOrder
     },
     infiniteHandler ($state) {
       const key = this.site.key
@@ -873,10 +885,6 @@ export default {
             this.selectedSiteName = this.sites[0].name
           }
         }
-        this.searchGroups = [...new Set(this.sites.map(site => site.group))]
-        if (this.searchGroups.length === 1) this.searchGroups = []
-        this.searchGroups.unshift('站内')
-        this.searchGroups.push('全站')
         this.searchGroup = this.setting.searchGroup
         if (this.searchGroup === undefined) setting.find().then(res => { this.searchGroup = res.searchGroup })
       })
